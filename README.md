@@ -1,114 +1,116 @@
-# Wireless USB-MIDI Adapter — Recovered ESP32 Prototype
+# Wireless USB-MIDI Adapter
 
-A prototype wireless USB-MIDI bridge built around ESP32 microcontrollers,
-exploring USB host enumeration, MIDI event-packet decoding, ESP-NOW transport,
-peer persistence/reconnection, and computer-side MIDI forwarding.
+I built this ESP32-based prototype to explore how a conventional USB MIDI
+controller could communicate with a computer wirelessly. The project combines
+USB host enumeration, USB-MIDI packet decoding, ESP-NOW transport, peer
+management, and computer-side MIDI forwarding.
 
-This repository reconstructs a 2025 experimental project from Arduino build
-artifacts. It is presented as engineering work in progress: every recovered
-sketch had a linked historical build, and the primary S2 sketches were rebuilt
-during reconstruction, but no evidence was available to claim a fully working
-controller-to-DAW path.
+The work is organized as an engineering prototype rather than a finished
+product. Individual subsystems compile and the protocol behavior is covered by
+host-side tests, but I have not documented a verified end-to-end
+controller-to-DAW test. Known gaps and unsuccessful approaches are retained
+because they show the design decisions and debugging process behind the
+project.
 
 ## System concept
 
 ```mermaid
 flowchart LR
-    A[USB MIDI controller] -->|USB| B[Battery-powered ESP32-S2\nUSB host / transmitter]
+    A[USB MIDI controller] -->|USB| B[Battery-powered ESP32-S2<br/>USB host / transmitter]
     B -->|ESP-NOW| C[ESP32-S2 receiver]
-    C -->|USB MIDI attempt or serial bridge| D[Computer / DAW]
+    C -->|USB MIDI or serial bridge| D[Computer / DAW]
 ```
 
 The firmware evolved along two main, mutually incompatible branches:
 
 - **Protocol A (`DEVICE_ESP2.0` + `HOST_ESP2.0`)** adds connection diagnostics
-  and sends raw MIDI bytes over a serial port for external bridge software.
-- **Protocol B (`DEVICE_ESP3.0` + `HOSTESP3.0`)** improves descriptor discovery
-  and uses Control Surface to attempt a class-compliant USB-MIDI receiver.
+  and forwards raw MIDI bytes over a serial port for use with external bridge
+  software.
+- **Protocol B (`DEVICE_ESP3.0` + `HOSTESP3.0`)** improves USB descriptor
+  discovery and uses Control Surface to present MIDI to the computer over USB.
 
-The second branch is closest to the intended product architecture, but its USB
-host implementation still omits interface claiming and robust transfer setup.
+These branches use different in-memory packet layouts and are not mutually
+compatible. Protocol B is closer to the intended architecture, although its
+USB host path still needs interface claiming and more robust transfer and error
+handling.
 
-## Engineering highlights
+## What I implemented
 
-- Used the ESP-IDF USB Host API from Arduino-ESP32 to inspect configuration,
+- Used the ESP-IDF USB Host API within Arduino-ESP32 to inspect configuration,
   interface, and endpoint descriptors for USB Audio/MIDIStreaming devices.
 - Parsed four-byte USB-MIDI event packets and mapped channel voice messages to
   compact ESP-NOW payloads.
-- Built broadcast discovery, MAC-based peer registration, NVS persistence,
-  heartbeats, reconnection states, timeouts, and manual unpair behavior.
-- Explored two computer output approaches: CDC serial bytes through an external
+- Implemented broadcast discovery, MAC-based peer registration, NVS peer
+  persistence, heartbeats, reconnection states, connection timeouts, and manual
+  unpairing.
+- Explored two computer-output paths: CDC serial bytes through an external
   MIDI bridge and native USB MIDI through Control Surface/TinyUSB.
-- Prototyped BLE-assisted discovery, SSD1306 status UI, GPIO diagnostics, and
-  ESP-NOW peer tests on ESP32-C3 hardware.
-- Recovered 14 Arduino sketches without rewriting their historical behavior,
-  retained auditable generated-source snapshots, and added protocol-layout
-  simulations and publication checks.
+- Prototyped BLE-assisted discovery, an SSD1306 status interface, GPIO
+  diagnostics, and ESP-NOW peer tests on ESP32-C3 hardware.
+- Added host-side checks for packet layout compatibility and USB-MIDI message
+  length handling.
 
-## Evidence-based project status
+## Project status
 
-| Area | What the repository demonstrates | Current limitation |
+| Area | Implemented | Remaining work |
 | --- | --- | --- |
-| USB host | Host stack setup, device events, descriptor walking, transfer callbacks | One branch never reaches setup; the other does not claim the interface |
-| USB-MIDI parsing | Channel voice CIN decoding and forwarding | SysEx/system common coverage is incomplete |
-| ESP-NOW | Two pairing/heartbeat protocols, channel pinning, NVS peers | Raw ABI structs, no version/sequence/acknowledgement |
-| Computer MIDI | Serial-byte bridge and Control Surface USB-MIDI approaches | No recovered USB enumeration or DAW test record |
-| BLE/OLED | Separate C3 pairing and UI experiments | Not integrated with the S2 MIDI path |
-| Hardware/power | Board roles and several GPIO assignments | No verified schematic, wiring record, or power measurements |
-| HID | Long-term concept only | No HID implementation recovered |
+| USB host | Host-stack setup, device events, descriptor walking, and transfer callbacks | One branch does not reach setup; the later branch does not claim the MIDI interface |
+| USB-MIDI parsing | Channel-voice Code Index Number decoding and forwarding | SysEx and system-common coverage is incomplete |
+| ESP-NOW | Pairing, heartbeat, fixed-channel operation, and NVS peer storage | Replace raw ABI structs with a versioned wire format; add sequencing and acknowledgements |
+| Computer MIDI | Serial bridge and Control Surface USB-MIDI approaches | Validate enumeration and DAW input on target hardware |
+| BLE and OLED | Separate C3 pairing and status-interface experiments | Integrate with the S2 MIDI data path |
+| Hardware and power | Board roles and several firmware-visible GPIO assignments | Document and electrically validate the complete schematic, USB VBUS path, and battery circuit |
+| HID | Design consideration only | No HID transport is implemented |
 
-## Repository map
+## Repository layout
 
 ```text
 firmware/
-  transmitter/                 Reconstructed S2 USB-host candidates
-  receiver/                    Reconstructed serial and USB-MIDI receivers
+  transmitter/                 ESP32-S2 USB-host transmitter iterations
+  receiver/                    Serial and USB-MIDI receiver iterations
   experiments/                 C3 pairing/UI, ESP-NOW, GPIO, and button tests
-archive/
-  recovered-sources/           Path-redacted generated .ino.cpp snapshots
-  artifact-manifest.csv        Original artifact hashes and cache evidence
-  build-environments.csv       Exact historical board/core configuration
-docs/                          Architecture, protocol, build, history, and audit
-hardware/                      Evidence-graded hardware and power notes
-tests/                         Host-side protocol/CIN simulations
-tools/                         Source-recovery and repository-audit utilities
+archive/                       Generated source snapshots and build evidence
+docs/                          Architecture, protocol, build, and design analysis
+hardware/                      Hardware, assembly, wiring, and power notes
+tests/                         Host-side protocol and MIDI-decoding tests
+tools/                         Source-processing and repository-audit utilities
 ```
 
-## Build and inspect
+## Build and validation
 
-The primary sketches were built historically with Arduino-ESP32 3.0.5 for the
-generic ESP32-S2 target. The USB-MIDI receiver additionally used Control Surface
-2.0.0. Start with [build and flash](docs/build-and-flash.md); exact recovered
-FQBN strings are in `archive/build-environments.csv`.
+The four primary ESP32-S2 sketches compile with Arduino-ESP32 3.0.5. The native
+USB-MIDI receiver also requires Control Surface 2.0.0. See
+[Build and flash](docs/build-and-flash.md) for board settings, dependencies,
+commands, and recorded validation results.
 
-Run the hardware-independent validation with:
+Run the hardware-independent checks with:
 
 ```powershell
 python -m unittest discover -s tests -v
 python tools/audit_repository.py
 ```
 
-Do not begin with battery power or a valuable USB controller. The original
-power path and USB VBUS circuit were not recovered.
+The tests simulate protocol layout and selected MIDI decoding behavior; they do
+not replace hardware validation. Before powering the prototype from a LiPo or
+connecting a valuable USB controller, verify the USB VBUS and battery wiring
+against the actual assembly.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
-- [Firmware versions](docs/firmware-versions.md)
-- [ESP-NOW protocols and compatibility matrix](docs/communication-protocol.md)
-- [USB and MIDI analysis](docs/usb-midi.md)
+- [Firmware versions and compatibility](docs/firmware-versions.md)
+- [ESP-NOW communication protocols](docs/communication-protocol.md)
+- [USB host and MIDI analysis](docs/usb-midi.md)
 - [Pairing and reconnection](docs/pairing-and-reconnection.md)
 - [Build and flash](docs/build-and-flash.md)
 - [Development history](docs/development-history.md)
-- [Testing evidence](docs/testing.md)
+- [Testing and validation](docs/testing.md)
 - [Known limitations](docs/known-limitations.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Hardware evidence](hardware/README.md)
-- [Manual GitHub publication](docs/publishing.md)
+- [Hardware notes](hardware/README.md)
 
-## Provenance and license
+## License status
 
-The initial Git history should describe this as a reconstruction from recovered
-artifacts, not as the original development history. No repository-wide license
-has been applied because source ownership and attribution are not fully
-resolved; see [licensing and provenance](LICENSES.md).
+No repository-wide license is currently applied. Some dependencies and copied
+library material have their own license requirements; see
+[Licensing notes](LICENSES.md) before reusing or redistributing the source.
