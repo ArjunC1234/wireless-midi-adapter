@@ -1,0 +1,27 @@
+# Arduino build outputs
+.build/
+build/
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.d
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.lnk
+
+# Python validation caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local logs and secrets
+*.log
+.env
+.env.*
+!.env.example
